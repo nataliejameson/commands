@@ -294,6 +294,7 @@ dependencies = [
 [[package]]
 name = "tee"
 version = "0.1.0"
+source = "git+ssh://git@github.com/nataliejameson/tee#16bbb59c7e276737199104f5dc1f21670f618113"
 dependencies = [
  "anyhow",
  "tempfile",
