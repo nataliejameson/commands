@@ -14,7 +14,13 @@ pub struct CommandLine(pub Vec<String>);
 
 impl Display for CommandLine {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
         for a in &self.0 {
+            if first {
+                first = false;
+            } else {
+                f.write_str(" ")?;
+            }
             f.write_str(a)?;
         }
         Ok(())
