@@ -1,96 +1,83 @@
 //!-- Simple runner for executables and accessing a few other small pieces of the exeuction env.
 
+use crate::CommandLine;
 use std::ffi::OsStr;
+use std::ops::Deref;
 use std::os::unix::prelude::CommandExt;
+use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
-use std::process::ExitStatus;
+use std::process::Output;
 use std::process::Stdio;
-use tracing::info;
+use tee::Tee;
 
-#[derive(thiserror::Error, Debug)]
-pub enum ExecutionError {
-    #[error("Received empty command")]
-    EmptyCommand,
-    #[error("Command `{}` failed with exit code {:?}", .0, .1)]
-    CommandFailed(String, ExitStatus),
-}
+pub trait CommandRunner {
+    fn run_checked<P: AsRef<Path>>(
+        &self,
+        command_line: CommandLine,
+        cwd: P,
+    ) -> anyhow::Result<ExecutionResult> {
+        self.run_checked_with_opts(command_line, cwd, CommandOpts::default())
+    }
 
-#[derive(thiserror::Error, Debug)]
-#[error("Could not get $HOME!")]
-pub struct MissingHomeError;
-
-/// The outcome of a command
-pub struct ExecutionResult {
-    pub status: std::process::ExitStatus,
-    pub stdout: String,
-}
-
-/// Various pieces of the environment needed to execute commands, find paths, etc.
-///
-/// A trait so that testing is easier.
-pub trait Env {
-    fn execute<T: AsRef<OsStr>>(&self, cmd: &[T]) -> anyhow::Result<ExecutionResult>
-    where
-        Self: Sized;
-
-    fn exec<T: AsRef<OsStr>>(&self, cmd: &[T]) -> anyhow::Result<()>
-    where
-        Self: Sized;
-
-    // fn config_dir(&self) -> anyhow::Result<PathBuf>;
-    // fn home_dir(&self) -> anyhow::Result<PathBuf>;
-    fn root_systemd_path(&self) -> PathBuf;
-    fn user_systemd_path(&self) -> anyhow::Result<PathBuf>;
-    fn hostname(&self) -> anyhow::Result<String>;
-}
-
-/// The default environment that actually runs commands, has real paths, etc.
-pub struct DefaultEnv;
-
-impl Env for DefaultEnv {
-    fn execute<T: AsRef<OsStr>>(&self, cmd: &[T]) -> anyhow::Result<ExecutionResult> {
-        let cmd_string = cmd
-            .iter()
-            .map(|a| a.as_ref().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ");
-        info!("Running `{}`", cmd_string);
-
-        if cmd.is_empty() {
-            return Err(ExecutionError::EmptyCommand.into());
-        }
-        let out = Command::new(cmd.get(0).unwrap())
-            .args(cmd.iter().skip(1))
-            .stderr(Stdio::inherit())
-            .output()?;
-        if !out.status.success() {
-            Err(ExecutionError::CommandFailed(cmd_string, out.status).into())
-        } else {
-            info!("Command `{}` finished successfully!", cmd_string);
-            Ok(ExecutionResult {
-                status: out.status,
-                stdout: String::from_utf8(out.stdout)?,
-            })
+    fn run_checked_with_opts<P: AsRef<Path>>(
+        &self,
+        command_line: CommandLine,
+        cwd: P,
+        opts: CommandOpts,
+    ) -> anyhow::Result<ExecutionResult> {
+        let program_name = command_line.program()?.to_owned();
+        let ret = self.run_with_opts(command_line, cwd, opts)?;
+        match ret.status.success() {
+            true => Ok(ret),
+            false => Err(anyhow::anyhow!(
+                "Command `{}` failed with status `{}`\nStdout:\n{}\nStderr:\n{}",
+                program_name,
+                ret.status,
+                String::from_utf8_lossy(&ret.stdout),
+                String::from_utf8_lossy(&ret.stderr)
+            )),
         }
     }
 
-    fn exec<T: AsRef<OsStr>>(&self, cmd: &[T]) -> anyhow::Result<()> {
-        let cmd_string = cmd
-            .iter()
-            .map(|a| a.as_ref().to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ");
-        info!("Running `{}`", cmd_string);
-
-        if cmd.is_empty() {
-            return Err(ExecutionError::EmptyCommand.into());
-        }
-        Err(Command::new(cmd.get(0).unwrap())
-            .args(cmd.iter().skip(1))
-            .exec()
-            .into())
+    fn run<P: AsRef<Path>>(
+        &self,
+        command_line: CommandLine,
+        cwd: P,
+    ) -> anyhow::Result<ExecutionResult> {
+        self.run_with_opts(command_line, cwd, CommandOpts::default())
     }
+
+    fn run_with_opts<P: AsRef<Path>>(
+        &self,
+        command_line: CommandLine,
+        cwd: P,
+        opts: CommandOpts,
+    ) -> anyhow::Result<ExecutionResult> {
+        let program_name = command_line.program()?.to_owned();
+        log::info!(
+            "Running `{}` in `{}`",
+            command_line,
+            cwd.as_ref().to_string_lossy()
+        );
+        let output = self.run_inner(command_line, cwd.as_ref(), opts)?;
+        log::debug!(
+            "Completed `{}` with exit status `{}`",
+            program_name,
+            output.status
+        );
+        Ok(ExecutionResult(output))
+    }
+    fn run_inner(
+        &self,
+        command_line: CommandLine,
+        cwd: &Path,
+        opts: CommandOpts,
+    ) -> anyhow::Result<Output>;
+
+    /// `exec()` the command, handing the process over to this command.
+    fn exec(&self, command_line: CommandLine) -> anyhow::Result<()>
+    where
+        Self: Sized;
 
     fn root_systemd_path(&self) -> PathBuf {
         PathBuf::from("/etc/systemd/user")
@@ -108,98 +95,208 @@ impl Env for DefaultEnv {
     }
 }
 
-pub mod testing {
+#[derive(Clone)]
+pub struct CommandOpts {
+    pub capture_stderr: bool,
+}
+
+impl Default for CommandOpts {
+    fn default() -> Self {
+        Self {
+            capture_stderr: true,
+        }
+    }
+}
+
+pub struct DefaultCommandRunner {}
+
+impl CommandRunner for DefaultCommandRunner {
+    fn run_inner(
+        &self,
+        command_line: CommandLine,
+        cwd: &Path,
+        opts: CommandOpts,
+    ) -> anyhow::Result<Output> {
+        let (stderr, stderr_tee) = if opts.capture_stderr {
+            let tee = Tee::new(std::io::stderr())?;
+            (tee.clone().into(), Some(tee))
+        } else {
+            (Stdio::inherit(), None)
+        };
+        let mut res = std::process::Command::new(command_line.program()?)
+            .args(command_line.args()?)
+            .current_dir(cwd)
+            .stderr(stderr)
+            .output()?;
+        if let Some(tee) = stderr_tee {
+            res.stderr = tee.get_output()?;
+        }
+        Ok(res)
+    }
+
+    fn exec(&self, command_line: CommandLine) -> anyhow::Result<()>
+    where
+        Self: Sized,
+    {
+        log::info!("Exec'ing `{}`", command_line);
+
+        Err(std::process::Command::new(command_line.program()?)
+            .args(command_line.args()?)
+            .exec()
+            .into())
+    }
+}
+
+pub mod test {
+    use super::CommandOpts;
+    use super::CommandRunner;
+    use crate::CommandLine;
     use std::cell::RefCell;
     use std::collections::VecDeque;
-    use std::ffi::OsStr;
-    use std::os::unix::prelude::ExitStatusExt;
+
+    use std::ops::Deref;
+    use std::os::unix::process::ExitStatusExt;
+    use std::path::Path;
     use std::path::PathBuf;
     use std::process::ExitStatus;
+    use std::process::Output;
 
-    use crate::env::Env;
-    use crate::env::ExecutionError;
-    use crate::env::ExecutionResult;
-
-    pub struct TestEnv {
-        pub temp: tempfile::TempDir,
-        pub issued_commands: RefCell<Vec<Vec<String>>>,
-        pub results: Option<RefCell<VecDeque<(i32, String)>>>,
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Invocation {
+        command_line: CommandLine,
+        cwd: PathBuf,
     }
 
-    impl TestEnv {
-        pub fn new() -> anyhow::Result<Self> {
-            Ok(TestEnv {
-                temp: tempfile::tempdir()?,
-                issued_commands: RefCell::new(Vec::new()),
-                results: None,
-            })
-        }
+    impl Deref for Invocation {
+        type Target = CommandLine;
 
-        pub fn with_results<T: ToString>(results: Vec<(i32, T)>) -> anyhow::Result<Self> {
-            Ok(TestEnv {
-                temp: tempfile::tempdir()?,
-                issued_commands: RefCell::new(Vec::new()),
-                results: Some(RefCell::new(
-                    results
-                        .into_iter()
-                        .map(|(code, s)| (code, s.to_string()))
-                        .collect(),
-                )),
-            })
+        fn deref(&self) -> &Self::Target {
+            &self.command_line
         }
     }
 
-    impl Env for TestEnv {
-        fn execute<T: AsRef<OsStr>>(&self, cmd: &[T]) -> anyhow::Result<ExecutionResult>
-        where
-            Self: Sized,
-        {
-            let cmd_string = cmd
-                .iter()
-                .map(|a| a.as_ref().to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ");
-            self.issued_commands.borrow_mut().push(
-                cmd.iter()
-                    .map(|os| os.as_ref().to_string_lossy().to_string())
-                    .collect(),
-            );
-            match self.results.as_ref() {
-                None => Ok(ExecutionResult {
-                    status: ExitStatus::from_raw(0),
-                    stdout: String::new(),
-                }),
-                Some(results) => match results.borrow_mut().pop_front() {
-                    None => Err(anyhow::anyhow!("No results remaining")),
-                    Some((0, stdout)) => Ok(ExecutionResult {
-                        status: ExitStatus::from_raw(0),
-                        stdout,
-                    }),
-                    Some((exit_code, _)) => Err(ExecutionError::CommandFailed(
-                        cmd_string,
-                        ExitStatus::from_raw(exit_code),
-                    )
-                    .into()),
-                },
+    impl Invocation {
+        pub fn new<P: Into<PathBuf>>(command_line: CommandLine, cwd: P) -> Self {
+            Self {
+                command_line,
+                cwd: cwd.into(),
             }
         }
-        fn exec<T: AsRef<OsStr>>(&self, _cmd: &[T]) -> anyhow::Result<()>
+    }
+
+    pub struct TestCommandRunner {
+        pub hostname: String,
+        pub temp: tempfile::TempDir,
+        pub issued_commands: RefCell<Vec<Invocation>>,
+        pub outputs: RefCell<VecDeque<Output>>,
+    }
+
+    impl Default for TestCommandRunner {
+        fn default() -> Self {
+            Self {
+                hostname: "local.example.com".to_owned(),
+                temp: tempfile::tempdir().expect("to be able to create a tempdir"),
+                issued_commands: RefCell::new(vec![]),
+                outputs: RefCell::new(Default::default()),
+            }
+        }
+    }
+
+    impl TestCommandRunner {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        pub fn with_results<I: IntoIterator<Item = (i32, S)>, S: ToString>(
+            i: I,
+        ) -> anyhow::Result<Self> {
+            let issued_commands = RefCell::new(Vec::new());
+            let outputs: VecDeque<_> = i
+                .into_iter()
+                .map(|(code, stdout)| {
+                    let _s = String::new();
+                    Output {
+                        status: ExitStatus::from_raw(code),
+                        stdout: stdout.to_string().into_bytes(),
+                        stderr: vec![],
+                    }
+                })
+                .collect();
+            Ok(Self {
+                issued_commands,
+                outputs: RefCell::new(outputs),
+                ..Default::default()
+            })
+        }
+    }
+
+    impl CommandRunner for TestCommandRunner {
+        fn run_inner(
+            &self,
+            command_line: CommandLine,
+            cwd: &Path,
+            _opts: CommandOpts,
+        ) -> anyhow::Result<Output> {
+            let invocation = Invocation::new(command_line, cwd);
+            self.issued_commands.borrow_mut().push(invocation);
+            Ok(self.outputs.borrow_mut().pop_front().expect("An output"))
+        }
+
+        fn exec(&self, _command_line: CommandLine) -> anyhow::Result<()>
         where
             Self: Sized,
         {
             Ok(())
         }
 
-        fn root_systemd_path(&self) -> PathBuf {
-            self.temp.path().join("systemd/root")
-        }
-
-        fn user_systemd_path(&self) -> anyhow::Result<PathBuf> {
-            Ok(self.temp.path().join("systemd/user"))
-        }
-
         fn hostname(&self) -> anyhow::Result<String> {
-            Ok("local.example.com".to_owned())
+            Ok(self.hostname.clone())
         }
     }
+}
+
+//
+// #[derive(thiserror::Error, Debug)]
+// pub enum ExecutionError {
+//     #[error("Received empty command")]
+//     EmptyCommand,
+//     #[error("Command `{}` failed with exit code {:?}", .0, .1)]
+//     CommandFailed(String, ExitStatus),
+// }
+
+#[derive(thiserror::Error, Debug)]
+#[error("Could not get $HOME!")]
+pub struct MissingHomeError;
+
+/// The outcome of a command + helper methods
+pub struct ExecutionResult(Output);
+impl ExecutionResult {
+    pub fn stdout(&self) -> anyhow::Result<String> {
+        Ok(String::from_utf8(self.0.stdout.clone())?)
+    }
+}
+
+impl Deref for ExecutionResult {
+    type Target = Output;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Various pieces of the environment needed to execute commands, find paths, etc.
+///
+/// A trait so that testing is easier.
+pub trait Env {
+    fn execute<T: AsRef<OsStr>>(&self, cmd: &[T]) -> anyhow::Result<ExecutionResult>
+    where
+        Self: Sized;
+
+    fn exec<T: AsRef<OsStr>>(&self, cmd: &[T]) -> anyhow::Result<()>
+    where
+        Self: Sized;
+
+    fn root_systemd_path(&self) -> PathBuf;
+    fn user_systemd_path(&self) -> anyhow::Result<PathBuf>;
+    fn hostname(&self) -> anyhow::Result<String>;
 }

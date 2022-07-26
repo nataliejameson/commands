@@ -45,6 +45,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "tee",
  "tempfile",
  "thiserror",
  "tracing",
@@ -288,6 +289,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tee"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
 ]
 
 [[package]]
