@@ -43,6 +43,7 @@ dependencies = [
  "hostname",
  "itertools",
  "log",
+ "paths",
  "serde",
  "serde_json",
  "tee",
@@ -191,6 +192,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18a6dbe30758c9f83eb00cbea4ac95966305f5a7772f3f42ebfc7fc7eddbd8e1"
 
 [[package]]
+name = "paths"
+version = "0.1.0"
+source = "git+ssh://git@github.com/nataliejameson/paths#6e5af4c029d25e30d0165b6ae8525180b237be0b"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "derivative",
+ "dirs",
+ "gazebo",
+ "itertools",
+ "log",
+ "ref-cast",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -232,6 +252,26 @@ dependencies = [
  "getrandom",
  "redox_syscall",
  "thiserror",
+]
+
+[[package]]
+name = "ref-cast"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed13bcd201494ab44900a96490291651d200730904221832b9547d24a87d332b"
+dependencies = [
+ "ref-cast-impl",
+]
+
+[[package]]
+name = "ref-cast-impl"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5234cd6063258a5e32903b53b1b6ac043a0541c8adc1f610f67b0326c7a578fa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

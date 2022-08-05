@@ -4,14 +4,14 @@ use crate::CommandLine;
 use std::ffi::OsStr;
 use std::ops::Deref;
 use std::os::unix::prelude::CommandExt;
-use std::path::Path;
 use std::path::PathBuf;
 use std::process::Output;
 use std::process::Stdio;
 use tee::Tee;
+use paths::AbsolutePath;
 
 pub trait CommandRunner {
-    fn run_checked<P: AsRef<Path>>(
+    fn run_checked<P: AsRef<AbsolutePath>>(
         &self,
         command_line: CommandLine,
         cwd: P,
@@ -19,7 +19,7 @@ pub trait CommandRunner {
         self.run_checked_with_opts(command_line, cwd, CommandOpts::default())
     }
 
-    fn run_checked_with_opts<P: AsRef<Path>>(
+    fn run_checked_with_opts<P: AsRef<AbsolutePath>>(
         &self,
         command_line: CommandLine,
         cwd: P,
@@ -39,7 +39,7 @@ pub trait CommandRunner {
         }
     }
 
-    fn run<P: AsRef<Path>>(
+    fn run<P: AsRef<AbsolutePath>>(
         &self,
         command_line: CommandLine,
         cwd: P,
@@ -47,7 +47,7 @@ pub trait CommandRunner {
         self.run_with_opts(command_line, cwd, CommandOpts::default())
     }
 
-    fn run_with_opts<P: AsRef<Path>>(
+    fn run_with_opts<P: AsRef<AbsolutePath>>(
         &self,
         command_line: CommandLine,
         cwd: P,
@@ -70,7 +70,7 @@ pub trait CommandRunner {
     fn run_inner(
         &self,
         command_line: CommandLine,
-        cwd: &Path,
+        cwd: &AbsolutePath,
         opts: CommandOpts,
     ) -> anyhow::Result<Output>;
 
@@ -114,7 +114,7 @@ impl CommandRunner for DefaultCommandRunner {
     fn run_inner(
         &self,
         command_line: CommandLine,
-        cwd: &Path,
+        cwd: &AbsolutePath,
         opts: CommandOpts,
     ) -> anyhow::Result<Output> {
         let (stderr, stderr_tee) = if opts.capture_stderr {
@@ -153,18 +153,16 @@ pub mod test {
     use crate::CommandLine;
     use std::cell::RefCell;
     use std::collections::VecDeque;
-
     use std::ops::Deref;
     use std::os::unix::process::ExitStatusExt;
-    use std::path::Path;
-    use std::path::PathBuf;
     use std::process::ExitStatus;
     use std::process::Output;
+    use paths::{AbsolutePath, AbsolutePathBuf};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Invocation {
         command_line: CommandLine,
-        cwd: PathBuf,
+        cwd: AbsolutePathBuf,
     }
 
     impl Deref for Invocation {
@@ -176,7 +174,7 @@ pub mod test {
     }
 
     impl Invocation {
-        pub fn new<P: Into<PathBuf>>(command_line: CommandLine, cwd: P) -> Self {
+        pub fn new<P: Into<AbsolutePathBuf>>(command_line: CommandLine, cwd: P) -> Self {
             Self {
                 command_line,
                 cwd: cwd.into(),
@@ -234,7 +232,7 @@ pub mod test {
         fn run_inner(
             &self,
             command_line: CommandLine,
-            cwd: &Path,
+            cwd: &AbsolutePath,
             _opts: CommandOpts,
         ) -> anyhow::Result<Output> {
             let invocation = Invocation::new(command_line, cwd);
@@ -254,15 +252,6 @@ pub mod test {
         }
     }
 }
-
-//
-// #[derive(thiserror::Error, Debug)]
-// pub enum ExecutionError {
-//     #[error("Received empty command")]
-//     EmptyCommand,
-//     #[error("Command `{}` failed with exit code {:?}", .0, .1)]
-//     CommandFailed(String, ExitStatus),
-// }
 
 #[derive(thiserror::Error, Debug)]
 #[error("Could not get $HOME!")]
