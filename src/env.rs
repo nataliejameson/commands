@@ -1,14 +1,14 @@
 //!-- Simple runner for executables and accessing a few other small pieces of the exeuction env.
 
 use crate::CommandLine;
+use paths::AbsolutePath;
+use paths::AbsolutePathBuf;
 use std::ffi::OsStr;
 use std::ops::Deref;
 use std::os::unix::prelude::CommandExt;
-use std::path::PathBuf;
 use std::process::Output;
 use std::process::Stdio;
 use tee::Tee;
-use paths::AbsolutePath;
 
 pub trait CommandRunner {
     fn run_checked<P: AsRef<AbsolutePath>>(
@@ -79,13 +79,13 @@ pub trait CommandRunner {
     where
         Self: Sized;
 
-    fn root_systemd_path(&self) -> PathBuf {
-        PathBuf::from("/etc/systemd/user")
+    fn root_systemd_path(&self) -> AbsolutePathBuf {
+        AbsolutePathBuf::try_new("/etc/systemd/user").expect("already validated")
     }
 
-    fn user_systemd_path(&self) -> anyhow::Result<PathBuf> {
+    fn user_systemd_path(&self) -> anyhow::Result<AbsolutePathBuf> {
         match dirs::config_dir() {
-            Some(p) => Ok(p.join("systemd/user")),
+            Some(p) => Ok(AbsolutePathBuf::try_from(p.join("systemd/user"))?),
             None => Err(MissingHomeError.into()),
         }
     }
@@ -151,13 +151,14 @@ pub mod test {
     use super::CommandOpts;
     use super::CommandRunner;
     use crate::CommandLine;
+    use paths::AbsolutePath;
+    use paths::AbsolutePathBuf;
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::ops::Deref;
     use std::os::unix::process::ExitStatusExt;
     use std::process::ExitStatus;
     use std::process::Output;
-    use paths::{AbsolutePath, AbsolutePathBuf};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Invocation {
@@ -285,7 +286,7 @@ pub trait Env {
     where
         Self: Sized;
 
-    fn root_systemd_path(&self) -> PathBuf;
-    fn user_systemd_path(&self) -> anyhow::Result<PathBuf>;
+    fn root_systemd_path(&self) -> AbsolutePathBuf;
+    fn user_systemd_path(&self) -> anyhow::Result<AbsolutePathBuf>;
     fn hostname(&self) -> anyhow::Result<String>;
 }
