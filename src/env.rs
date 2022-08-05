@@ -54,11 +54,7 @@ pub trait CommandRunner {
         opts: CommandOpts,
     ) -> anyhow::Result<ExecutionResult> {
         let program_name = command_line.program()?.to_owned();
-        log::info!(
-            "Running `{}` in `{}`",
-            command_line,
-            cwd.as_ref().to_string_lossy()
-        );
+        log::info!("Running `{}` in `{}`", command_line, cwd.as_ref());
         let output = self.run_inner(command_line, cwd.as_ref(), opts)?;
         log::debug!(
             "Completed `{}` with exit status `{}`",
