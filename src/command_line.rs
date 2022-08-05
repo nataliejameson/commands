@@ -80,9 +80,10 @@ impl CommandLine {
 
 #[cfg(test)]
 mod test {
+    use gazebo::prelude::VecExt;
+
     use crate::command_line::CommandLineError;
     use crate::CommandLine;
-    use gazebo::prelude::VecExt;
 
     #[test]
     fn push_works() {

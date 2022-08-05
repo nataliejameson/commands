@@ -1,14 +1,16 @@
 //!-- Simple runner for executables and accessing a few other small pieces of the exeuction env.
 
-use crate::CommandLine;
-use paths::AbsolutePath;
-use paths::AbsolutePathBuf;
 use std::ffi::OsStr;
 use std::ops::Deref;
 use std::os::unix::prelude::CommandExt;
 use std::process::Output;
 use std::process::Stdio;
+
+use paths::AbsolutePath;
+use paths::AbsolutePathBuf;
 use tee::Tee;
+
+use crate::CommandLine;
 
 pub trait CommandRunner {
     fn run_checked<P: AsRef<AbsolutePath>>(
@@ -144,17 +146,19 @@ impl CommandRunner for DefaultCommandRunner {
 }
 
 pub mod test {
-    use super::CommandOpts;
-    use super::CommandRunner;
-    use crate::CommandLine;
-    use paths::AbsolutePath;
-    use paths::AbsolutePathBuf;
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::ops::Deref;
     use std::os::unix::process::ExitStatusExt;
     use std::process::ExitStatus;
     use std::process::Output;
+
+    use paths::AbsolutePath;
+    use paths::AbsolutePathBuf;
+
+    use super::CommandOpts;
+    use super::CommandRunner;
+    use crate::CommandLine;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Invocation {
