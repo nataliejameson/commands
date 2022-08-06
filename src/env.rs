@@ -14,20 +14,21 @@ use tee::Tee;
 use crate::CommandLine;
 
 pub trait CommandRunner: Debug + Send + Sync {
-    fn run_checked<P: AsRef<AbsolutePath>>(
+    fn run_checked<P: AsRef<AbsolutePath>, C: Into<CommandLine>>(
         &self,
-        command_line: CommandLine,
+        command_line: C,
         cwd: P,
     ) -> anyhow::Result<ExecutionResult> {
         self.run_checked_with_opts(command_line, cwd, CommandOpts::default())
     }
 
-    fn run_checked_with_opts<P: AsRef<AbsolutePath>>(
+    fn run_checked_with_opts<P: AsRef<AbsolutePath>, C: Into<CommandLine>>(
         &self,
-        command_line: CommandLine,
+        command_line: C,
         cwd: P,
         opts: CommandOpts,
     ) -> anyhow::Result<ExecutionResult> {
+        let command_line = command_line.into();
         let program_name = command_line.program()?.to_owned();
         let ret = self.run_with_opts(command_line, cwd, opts)?;
         match ret.status.success() {
@@ -42,20 +43,21 @@ pub trait CommandRunner: Debug + Send + Sync {
         }
     }
 
-    fn run<P: AsRef<AbsolutePath>>(
+    fn run<P: AsRef<AbsolutePath>, C: Into<CommandLine>>(
         &self,
-        command_line: CommandLine,
+        command_line: C,
         cwd: P,
     ) -> anyhow::Result<ExecutionResult> {
         self.run_with_opts(command_line, cwd, CommandOpts::default())
     }
 
-    fn run_with_opts<P: AsRef<AbsolutePath>>(
+    fn run_with_opts<P: AsRef<AbsolutePath>, C: Into<CommandLine>>(
         &self,
-        command_line: CommandLine,
+        command_line: C,
         cwd: P,
         opts: CommandOpts,
     ) -> anyhow::Result<ExecutionResult> {
+        let command_line = command_line.into();
         let program_name = command_line.program()?.to_owned();
         log::info!("Running `{}` in `{}`", command_line, cwd.as_ref());
         let output = self.run_inner(command_line, cwd.as_ref(), opts)?;

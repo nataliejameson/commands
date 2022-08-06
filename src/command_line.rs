@@ -27,9 +27,9 @@ impl Display for CommandLine {
     }
 }
 
-impl<T: IntoIterator<Item = impl Into<String>>> From<T> for CommandLine {
+impl<T: IntoIterator<Item = impl AsRef<str>>> From<T> for CommandLine {
     fn from(items: T) -> Self {
-        Self(items.into_iter().map(|i| i.into()).collect())
+        Self(items.into_iter().map(|i| i.as_ref().to_owned()).collect())
     }
 }
 
@@ -52,13 +52,13 @@ impl CommandLine {
         self.0.push(v.into())
     }
 
-    pub fn extend<T: IntoIterator<Item = impl Into<String>>>(&mut self, v: T) {
-        self.0.extend(v.into_iter().map(|i| i.into()))
+    pub fn extend<T: Into<CommandLine>>(&mut self, v: T) {
+        self.0.extend(v.into().0)
     }
 
-    pub fn clone_with<T: IntoIterator<Item = impl Into<String>>>(&self, v: T) -> Self {
+    pub fn clone_with<T: Into<CommandLine>>(&self, v: T) -> Self {
         let mut new = self.clone();
-        new.extend(v);
+        new.extend(v.into().0);
         new
     }
 
@@ -80,22 +80,51 @@ impl CommandLine {
 
 #[cfg(test)]
 mod test {
-    use gazebo::prelude::VecExt;
-
     use crate::command_line::CommandLineError;
     use crate::CommandLine;
+
+    #[test]
+    fn from_string_collection() {
+        assert_eq!(["foo", "bar"], *CommandLine::from(["foo", "bar"]));
+        assert_eq!(["foo", "bar"], *CommandLine::from(&["foo", "bar"]));
+        assert_eq!(["foo", "bar"], *CommandLine::from(vec!["foo", "bar"]));
+        assert_eq!(["foo", "bar"], *CommandLine::from(&vec!["foo", "bar"]));
+        assert_eq!(
+            ["foo", "bar"],
+            *CommandLine::from(["foo".to_owned(), "bar".to_owned()])
+        );
+        assert_eq!(
+            ["foo", "bar"],
+            *CommandLine::from(&["foo".to_owned(), "bar".to_owned()])
+        );
+        assert_eq!(
+            ["foo", "bar"],
+            *CommandLine::from(vec!["foo".to_owned(), "bar".to_owned()])
+        );
+        assert_eq!(
+            ["foo", "bar"],
+            *CommandLine::from(&vec!["foo".to_owned(), "bar".to_owned()])
+        );
+    }
 
     #[test]
     fn push_works() {
         let mut cli = CommandLine::from(vec!["foo"]);
         cli.push("bar");
         cli.push("baz".to_owned());
-        cli.extend(["foo2", "bar2"]);
-        cli.extend(["foo3".to_owned(), "bar3".to_owned()]);
+        cli.extend(["foo1", "bar1"]);
+        cli.extend(&["foo2", "bar2"]);
+        cli.extend(vec!["foo3", "bar3"]);
+        cli.extend(&vec!["foo4", "bar4"]);
+        cli.extend(["foo5", "bar5"]);
+        cli.extend(&["foo6", "bar6"]);
+        cli.extend(vec!["foo7", "bar7"]);
+        cli.extend(&vec!["foo8", "bar8"]);
 
-        let expected =
-            vec!["foo", "bar", "baz", "foo2", "bar2", "foo3", "bar3"].into_map(String::from);
-        assert_eq!(*cli, expected)
+        let mut expected = vec!["foo".to_owned(), "bar".to_owned(), "baz".to_owned()];
+        expected.extend((1..9).flat_map(|i| [format!("foo{}", i), format!("bar{}", i)]));
+
+        assert_eq!(expected, *cli);
     }
 
     #[test]
@@ -107,11 +136,17 @@ mod test {
     #[test]
     fn clone_with() {
         let mut cli = CommandLine::from(["foo", "bar"]);
-        let cloned = cli.clone_with(["baz"]);
+        let cloned1 = cli.clone_with(["baz"]);
+        let cloned2 = cli.clone_with(&["baz"]);
+        let cloned3 = cli.clone_with(vec!["baz"]);
+        let cloned4 = cli.clone_with(&vec!["baz"]);
         cli.push("quz");
 
         assert_eq!(["foo", "bar", "quz"], *cli);
-        assert_eq!(["foo", "bar", "baz"], *cloned);
+        assert_eq!(["foo", "bar", "baz"], *cloned1);
+        assert_eq!(["foo", "bar", "baz"], *cloned2);
+        assert_eq!(["foo", "bar", "baz"], *cloned3);
+        assert_eq!(["foo", "bar", "baz"], *cloned4);
     }
 
     #[test]
