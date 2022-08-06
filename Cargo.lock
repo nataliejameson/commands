@@ -194,7 +194,7 @@ checksum = "18a6dbe30758c9f83eb00cbea4ac95966305f5a7772f3f42ebfc7fc7eddbd8e1"
 [[package]]
 name = "paths"
 version = "0.1.0"
-source = "git+ssh://git@github.com/nataliejameson/paths#6e5af4c029d25e30d0165b6ae8525180b237be0b"
+source = "git+ssh://git@github.com/nataliejameson/paths?rev=9e4280abf74c81b36da3fcf4763ceb4726742a95#9e4280abf74c81b36da3fcf4763ceb4726742a95"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -334,7 +334,7 @@ dependencies = [
 [[package]]
 name = "tee"
 version = "0.1.0"
-source = "git+ssh://git@github.com/nataliejameson/tee#25051309cfd3b929de9a897ff2cb6fdb4fc12e58"
+source = "git+ssh://git@github.com/nataliejameson/tee?rev=e77d23ca2d09f847c45cdb161fe461c843c3cc49#e77d23ca2d09f847c45cdb161fe461c843c3cc49"
 dependencies = [
  "anyhow",
  "tempfile",
