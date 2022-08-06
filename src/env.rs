@@ -1,6 +1,7 @@
 //!-- Simple runner for executables and accessing a few other small pieces of the exeuction env.
 
 use std::ffi::OsStr;
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::os::unix::prelude::CommandExt;
 use std::process::Output;
@@ -12,7 +13,7 @@ use tee::Tee;
 
 use crate::CommandLine;
 
-pub trait CommandRunner {
+pub trait CommandRunner: Debug + Send + Sync {
     fn run_checked<P: AsRef<AbsolutePath>>(
         &self,
         command_line: CommandLine,
@@ -106,6 +107,7 @@ impl Default for CommandOpts {
     }
 }
 
+#[derive(Debug)]
 pub struct DefaultCommandRunner {}
 
 impl CommandRunner for DefaultCommandRunner {
@@ -146,12 +148,12 @@ impl CommandRunner for DefaultCommandRunner {
 }
 
 pub mod test {
-    use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::ops::Deref;
     use std::os::unix::process::ExitStatusExt;
     use std::process::ExitStatus;
     use std::process::Output;
+    use std::sync::RwLock;
 
     use paths::AbsolutePath;
     use paths::AbsolutePathBuf;
@@ -183,11 +185,12 @@ pub mod test {
         }
     }
 
+    #[derive(Debug)]
     pub struct TestCommandRunner {
         pub hostname: String,
         pub temp: tempfile::TempDir,
-        pub issued_commands: RefCell<Vec<Invocation>>,
-        pub outputs: RefCell<VecDeque<Output>>,
+        pub issued_commands: RwLock<Vec<Invocation>>,
+        pub outputs: RwLock<VecDeque<Output>>,
     }
 
     impl Default for TestCommandRunner {
@@ -195,8 +198,8 @@ pub mod test {
             Self {
                 hostname: "local.example.com".to_owned(),
                 temp: tempfile::tempdir().expect("to be able to create a tempdir"),
-                issued_commands: RefCell::new(vec![]),
-                outputs: RefCell::new(Default::default()),
+                issued_commands: RwLock::new(vec![]),
+                outputs: RwLock::new(Default::default()),
             }
         }
     }
@@ -209,7 +212,7 @@ pub mod test {
         pub fn with_results<I: IntoIterator<Item = (i32, S)>, S: ToString>(
             i: I,
         ) -> anyhow::Result<Self> {
-            let issued_commands = RefCell::new(Vec::new());
+            let issued_commands = RwLock::new(Vec::new());
             let outputs: VecDeque<_> = i
                 .into_iter()
                 .map(|(code, stdout)| {
@@ -223,7 +226,7 @@ pub mod test {
                 .collect();
             Ok(Self {
                 issued_commands,
-                outputs: RefCell::new(outputs),
+                outputs: RwLock::new(outputs),
                 ..Default::default()
             })
         }
@@ -237,8 +240,13 @@ pub mod test {
             _opts: CommandOpts,
         ) -> anyhow::Result<Output> {
             let invocation = Invocation::new(command_line, cwd);
-            self.issued_commands.borrow_mut().push(invocation);
-            Ok(self.outputs.borrow_mut().pop_front().expect("An output"))
+            self.issued_commands.write().unwrap().push(invocation);
+            Ok(self
+                .outputs
+                .write()
+                .unwrap()
+                .pop_front()
+                .expect("An output"))
         }
 
         fn exec(&self, _command_line: CommandLine) -> anyhow::Result<()>
