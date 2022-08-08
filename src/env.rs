@@ -1,5 +1,7 @@
 //!-- Simple runner for executables and accessing a few other small pieces of the exeuction env.
 
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -7,6 +9,7 @@ use std::os::unix::prelude::CommandExt;
 use std::process::Output;
 use std::process::Stdio;
 
+use maplit::hashset;
 use paths::AbsolutePath;
 use paths::AbsolutePathBuf;
 use tee::Tee;
@@ -110,7 +113,51 @@ impl Default for CommandOpts {
 }
 
 #[derive(Debug)]
-pub struct DefaultCommandRunner {}
+pub struct DefaultCommandRunner {
+    ignored_env_vars: Option<HashSet<&'static str>>,
+    allowed_env_vars: Option<HashSet<&'static str>>,
+}
+
+impl Default for DefaultCommandRunner {
+    fn default() -> Self {
+        Self {
+            ignored_env_vars: Some(hashset!["GIT_DIR"]),
+            allowed_env_vars: None,
+        }
+    }
+}
+
+impl DefaultCommandRunner {
+    pub fn ignoring(ignored: &[&'static str]) -> Self {
+        let ignored = ignored.iter().copied().collect();
+        Self {
+            ignored_env_vars: Some(ignored),
+            allowed_env_vars: None,
+        }
+    }
+
+    pub fn allowing(ignored: &[&'static str]) -> Self {
+        let allowed = ignored.iter().copied().collect();
+        Self {
+            ignored_env_vars: None,
+            allowed_env_vars: Some(allowed),
+        }
+    }
+
+    fn env_vars(&self) -> HashMap<String, String> {
+        if let Some(ignored) = self.ignored_env_vars.as_ref() {
+            std::env::vars()
+                .filter(|(name, _)| !ignored.contains(name.as_str()))
+                .collect()
+        } else if let Some(allowed) = self.allowed_env_vars.as_ref() {
+            std::env::vars()
+                .filter(|(name, _)| allowed.contains(name.as_str()))
+                .collect()
+        } else {
+            std::env::vars().collect()
+        }
+    }
+}
 
 impl CommandRunner for DefaultCommandRunner {
     fn run_inner(
@@ -128,6 +175,8 @@ impl CommandRunner for DefaultCommandRunner {
         let mut res = std::process::Command::new(command_line.program()?)
             .args(command_line.args()?)
             .current_dir(cwd)
+            .env_clear()
+            .envs(self.env_vars())
             .stderr(stderr)
             .output()?;
         if let Some(tee) = stderr_tee {
@@ -299,4 +348,68 @@ pub trait Env {
     fn root_systemd_path(&self) -> AbsolutePathBuf;
     fn user_systemd_path(&self) -> anyhow::Result<AbsolutePathBuf>;
     fn hostname(&self) -> anyhow::Result<String>;
+}
+
+#[cfg(test)]
+mod default_runner_tests {
+    use paths::AbsolutePath;
+    use paths::AbsolutePathBuf;
+
+    use crate::CommandOpts;
+    use crate::CommandRunner;
+    use crate::DefaultCommandRunner;
+
+    #[test]
+    fn sets_cwd_correctly() -> anyhow::Result<()> {
+        let temp = tempfile::TempDir::new()?;
+        let runner = DefaultCommandRunner::default();
+        std::fs::write(temp.path().join("test_file"), "contents")?;
+
+        let out = runner.run_checked(["ls", "-1", "."], &AbsolutePath::try_new(temp.path())?)?;
+        assert_eq!("test_file", out.stdout()?.trim());
+
+        let out = runner.run(["ls", "-1", "."], &AbsolutePath::try_new(temp.path())?)?;
+        assert_eq!("test_file", out.stdout()?.trim());
+
+        let out = runner.run_with_opts(
+            ["ls", "-1", "."],
+            &AbsolutePath::try_new(temp.path())?,
+            CommandOpts::default(),
+        )?;
+        assert_eq!("test_file", out.stdout()?.trim());
+        Ok(())
+    }
+
+    #[test]
+    fn excludes_env_vars() -> anyhow::Result<()> {
+        let runner = DefaultCommandRunner::default();
+        let stdout = runner
+            .run_checked(["env"], AbsolutePathBuf::current_dir())?
+            .stdout()?;
+
+        assert!(stdout.contains("CARGO_MANIFEST_DIR"));
+
+        let runner = DefaultCommandRunner::ignoring(&["CARGO_MANIFEST_DIR"]);
+        let stdout = runner
+            .run_checked(["env"], AbsolutePathBuf::current_dir())?
+            .stdout()?;
+
+        assert!(!stdout.contains("CARGO_MANIFEST_DIR"));
+
+        let runner = DefaultCommandRunner::allowing(&["CWD", "CARGO_MANIFEST_DIR"]);
+        let stdout = runner
+            .run_checked(["env"], AbsolutePathBuf::current_dir())?
+            .stdout()?;
+
+        assert!(stdout.contains("CARGO_MANIFEST_DIR"));
+
+        let runner = DefaultCommandRunner::allowing(&["CWD"]);
+        let stdout = runner
+            .run_checked(["env"], AbsolutePathBuf::current_dir())?
+            .stdout()?;
+
+        assert!(!stdout.contains("CARGO_MANIFEST_DIR"));
+
+        Ok(())
+    }
 }
