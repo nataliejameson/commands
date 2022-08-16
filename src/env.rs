@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fmt::Debug;
+use std::io::Write;
 use std::ops::Deref;
 use std::os::unix::prelude::CommandExt;
 use std::process::Output;
@@ -102,12 +103,14 @@ pub trait CommandRunner: Debug + Send + Sync {
 #[derive(Clone)]
 pub struct CommandOpts {
     pub capture_stderr: bool,
+    pub stdin: Option<Vec<u8>>,
 }
 
 impl Default for CommandOpts {
     fn default() -> Self {
         Self {
             capture_stderr: true,
+            stdin: None,
         }
     }
 }
@@ -128,7 +131,7 @@ impl Default for DefaultCommandRunner {
 }
 
 impl DefaultCommandRunner {
-    pub fn ignoring(ignored: &[&'static str]) -> Self {
+    pub fn ignoring_env(ignored: &[&'static str]) -> Self {
         let ignored = ignored.iter().copied().collect();
         Self {
             ignored_env_vars: Some(ignored),
@@ -136,7 +139,7 @@ impl DefaultCommandRunner {
         }
     }
 
-    pub fn allowing(ignored: &[&'static str]) -> Self {
+    pub fn allowing_env(ignored: &[&'static str]) -> Self {
         let allowed = ignored.iter().copied().collect();
         Self {
             ignored_env_vars: None,
@@ -172,13 +175,25 @@ impl CommandRunner for DefaultCommandRunner {
         } else {
             (Stdio::inherit(), None)
         };
-        let mut res = std::process::Command::new(command_line.program()?)
+        let stdin = if opts.stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::inherit()
+        };
+        let mut child = std::process::Command::new(command_line.program()?)
             .args(command_line.args()?)
             .current_dir(cwd)
             .env_clear()
             .envs(self.env_vars())
+            .stdin(stdin)
+            .stdout(Stdio::piped())
             .stderr(stderr)
-            .output()?;
+            .spawn()?;
+        if let (Some(stdin), Some(stdin_bytes)) = (child.stdin.as_mut(), opts.stdin) {
+            stdin.write(&stdin_bytes)?;
+        }
+        let mut res = child.wait_with_output()?;
+
         if let Some(tee) = stderr_tee {
             res.stderr = tee.get_output()?;
         }
@@ -389,27 +404,45 @@ mod default_runner_tests {
 
         assert!(stdout.contains("CARGO_MANIFEST_DIR"));
 
-        let runner = DefaultCommandRunner::ignoring(&["CARGO_MANIFEST_DIR"]);
+        let runner = DefaultCommandRunner::ignoring_env(&["CARGO_MANIFEST_DIR"]);
         let stdout = runner
             .run_checked(["env"], AbsolutePathBuf::current_dir())?
             .stdout()?;
 
         assert!(!stdout.contains("CARGO_MANIFEST_DIR"));
 
-        let runner = DefaultCommandRunner::allowing(&["CWD", "CARGO_MANIFEST_DIR"]);
+        let runner = DefaultCommandRunner::allowing_env(&["CWD", "CARGO_MANIFEST_DIR"]);
         let stdout = runner
             .run_checked(["env"], AbsolutePathBuf::current_dir())?
             .stdout()?;
 
         assert!(stdout.contains("CARGO_MANIFEST_DIR"));
 
-        let runner = DefaultCommandRunner::allowing(&["CWD"]);
+        let runner = DefaultCommandRunner::allowing_env(&["CWD"]);
         let stdout = runner
             .run_checked(["env"], AbsolutePathBuf::current_dir())?
             .stdout()?;
 
         assert!(!stdout.contains("CARGO_MANIFEST_DIR"));
 
+        Ok(())
+    }
+
+    #[test]
+    fn uses_stdin() -> anyhow::Result<()> {
+        let runner = DefaultCommandRunner::default();
+        let stdout = runner
+            .run_checked_with_opts(
+                ["cat"],
+                &AbsolutePathBuf::current_dir(),
+                CommandOpts {
+                    stdin: Some("TESTING".as_bytes().to_vec()),
+                    ..Default::default()
+                },
+            )?
+            .stdout()?;
+
+        assert_eq!("TESTING", stdout);
         Ok(())
     }
 }
