@@ -190,7 +190,7 @@ impl CommandRunner for DefaultCommandRunner {
             .stderr(stderr)
             .spawn()?;
         if let (Some(stdin), Some(stdin_bytes)) = (child.stdin.as_mut(), opts.stdin) {
-            stdin.write(&stdin_bytes)?;
+            stdin.write_all(&stdin_bytes)?;
         }
         let mut res = child.wait_with_output()?;
 
