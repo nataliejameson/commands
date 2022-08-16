@@ -333,7 +333,7 @@ pub mod test {
 pub struct MissingHomeError;
 
 /// The outcome of a command + helper methods
-pub struct ExecutionResult(Output);
+pub struct ExecutionResult(pub Output);
 impl ExecutionResult {
     pub fn stdout(&self) -> anyhow::Result<String> {
         Ok(String::from_utf8(self.0.stdout.clone())?)
