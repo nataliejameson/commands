@@ -201,7 +201,7 @@ checksum = "18a6dbe30758c9f83eb00cbea4ac95966305f5a7772f3f42ebfc7fc7eddbd8e1"
 [[package]]
 name = "paths"
 version = "0.1.0"
-source = "git+ssh://git@github.com/nataliejameson/paths?rev=fde6093576f73021e1435220c0a13e4fab35e5ed#fde6093576f73021e1435220c0a13e4fab35e5ed"
+source = "git+ssh://git@github.com/nataliejameson/paths?rev=76e707cce1144fed3a4a927c9ae490f36c95735d#76e707cce1144fed3a4a927c9ae490f36c95735d"
 dependencies = [
  "anyhow",
  "async-trait",
