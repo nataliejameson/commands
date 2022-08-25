@@ -104,6 +104,7 @@ pub trait CommandRunner: Debug + Send + Sync {
 pub struct CommandOpts {
     pub capture_stderr: bool,
     pub stdin: Option<Vec<u8>>,
+    pub env: HashMap<String, String>,
 }
 
 impl Default for CommandOpts {
@@ -111,36 +112,37 @@ impl Default for CommandOpts {
         Self {
             capture_stderr: true,
             stdin: None,
+            env: HashMap::default(),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct DefaultCommandRunner {
-    ignored_env_vars: Option<HashSet<&'static str>>,
-    allowed_env_vars: Option<HashSet<&'static str>>,
+    ignored_env_vars: Option<HashSet<String>>,
+    allowed_env_vars: Option<HashSet<String>>,
 }
 
 impl Default for DefaultCommandRunner {
     fn default() -> Self {
         Self {
-            ignored_env_vars: Some(hashset!["GIT_DIR"]),
+            ignored_env_vars: Some(hashset!["GIT_DIR".to_owned()]),
             allowed_env_vars: None,
         }
     }
 }
 
 impl DefaultCommandRunner {
-    pub fn ignoring_env(ignored: &[&'static str]) -> Self {
-        let ignored = ignored.iter().copied().collect();
+    pub fn ignoring_env<S: ToString>(ignored: &[S]) -> Self {
+        let ignored = ignored.iter().map(S::to_string).collect();
         Self {
             ignored_env_vars: Some(ignored),
             allowed_env_vars: None,
         }
     }
 
-    pub fn allowing_env(ignored: &[&'static str]) -> Self {
-        let allowed = ignored.iter().copied().collect();
+    pub fn allowing_env<S: ToString>(ignored: &[S]) -> Self {
+        let allowed = ignored.iter().map(S::to_string).collect();
         Self {
             ignored_env_vars: None,
             allowed_env_vars: Some(allowed),
@@ -180,11 +182,15 @@ impl CommandRunner for DefaultCommandRunner {
         } else {
             Stdio::inherit()
         };
+        let mut env_vars = self.env_vars();
+        for (k, v) in opts.env {
+            env_vars.insert(k, v);
+        }
         let mut child = std::process::Command::new(command_line.program()?)
             .args(command_line.args()?)
             .current_dir(cwd)
             .env_clear()
-            .envs(self.env_vars())
+            .envs(env_vars)
             .stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(stderr)
@@ -367,6 +373,7 @@ pub trait Env {
 
 #[cfg(test)]
 mod default_runner_tests {
+    use maplit::hashmap;
     use paths::AbsolutePath;
     use paths::AbsolutePathBuf;
 
@@ -443,6 +450,24 @@ mod default_runner_tests {
             .stdout()?;
 
         assert_eq!("TESTING", stdout);
+        Ok(())
+    }
+
+    #[test]
+    fn sets_env_vars() -> anyhow::Result<()> {
+        let runner = DefaultCommandRunner::default();
+        let stdout = runner
+            .run_checked_with_opts(
+                ["env"],
+                AbsolutePathBuf::current_dir(),
+                CommandOpts {
+                    env: hashmap! { "FOO".to_owned() => "BAR".to_owned() },
+                    ..Default::default()
+                },
+            )?
+            .stdout()?;
+
+        assert!(stdout.contains("FOO"));
         Ok(())
     }
 }
