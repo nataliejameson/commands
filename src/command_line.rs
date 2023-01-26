@@ -113,11 +113,11 @@ mod test {
         cli.push("bar");
         cli.push("baz".to_owned());
         cli.extend(["foo1", "bar1"]);
-        cli.extend(&["foo2", "bar2"]);
+        cli.extend(["foo2", "bar2"]);
         cli.extend(vec!["foo3", "bar3"]);
         cli.extend(&vec!["foo4", "bar4"]);
         cli.extend(["foo5", "bar5"]);
-        cli.extend(&["foo6", "bar6"]);
+        cli.extend(["foo6", "bar6"]);
         cli.extend(vec!["foo7", "bar7"]);
         cli.extend(&vec!["foo8", "bar8"]);
 
@@ -137,9 +137,9 @@ mod test {
     fn clone_with() {
         let mut cli = CommandLine::from(["foo", "bar"]);
         let cloned1 = cli.clone_with(["baz"]);
-        let cloned2 = cli.clone_with(&["baz"]);
+        let cloned2 = cli.clone_with(["baz"]);
         let cloned3 = cli.clone_with(vec!["baz"]);
-        let cloned4 = cli.clone_with(&vec!["baz"]);
+        let cloned4 = cli.clone_with(vec!["baz"]);
         cli.push("quz");
 
         assert_eq!(["foo", "bar", "quz"], *cli);

@@ -103,6 +103,9 @@ pub trait CommandRunner: Debug + Send + Sync {
 #[derive(Clone)]
 pub struct CommandOpts {
     pub capture_stderr: bool,
+    /// If set, capture stdout from the process, and do not print output to calling process' stdout.
+    /// Otherwise, stream to the calling process' stdout.
+    pub capture_stdout: bool,
     pub stdin: Option<Vec<u8>>,
     pub env: HashMap<String, String>,
 }
@@ -111,6 +114,7 @@ impl Default for CommandOpts {
     fn default() -> Self {
         Self {
             capture_stderr: true,
+            capture_stdout: true,
             stdin: None,
             env: HashMap::default(),
         }
@@ -182,6 +186,11 @@ impl CommandRunner for DefaultCommandRunner {
         } else {
             Stdio::inherit()
         };
+        let stdout = if opts.capture_stdout {
+            Stdio::piped()
+        } else {
+            Stdio::inherit()
+        };
         let mut env_vars = self.env_vars();
         for (k, v) in opts.env {
             env_vars.insert(k, v);
@@ -192,7 +201,7 @@ impl CommandRunner for DefaultCommandRunner {
             .env_clear()
             .envs(env_vars)
             .stdin(stdin)
-            .stdout(Stdio::piped())
+            .stdout(stdout)
             .stderr(stderr)
             .spawn()?;
         if let (Some(stdin), Some(stdin_bytes)) = (child.stdin.as_mut(), opts.stdin) {
@@ -387,15 +396,15 @@ mod default_runner_tests {
         let runner = DefaultCommandRunner::default();
         std::fs::write(temp.path().join("test_file"), "contents")?;
 
-        let out = runner.run_checked(["ls", "-1", "."], &AbsolutePath::try_new(temp.path())?)?;
+        let out = runner.run_checked(["ls", "-1", "."], AbsolutePath::try_new(temp.path())?)?;
         assert_eq!("test_file", out.stdout()?.trim());
 
-        let out = runner.run(["ls", "-1", "."], &AbsolutePath::try_new(temp.path())?)?;
+        let out = runner.run(["ls", "-1", "."], AbsolutePath::try_new(temp.path())?)?;
         assert_eq!("test_file", out.stdout()?.trim());
 
         let out = runner.run_with_opts(
             ["ls", "-1", "."],
-            &AbsolutePath::try_new(temp.path())?,
+            AbsolutePath::try_new(temp.path())?,
             CommandOpts::default(),
         )?;
         assert_eq!("test_file", out.stdout()?.trim());
@@ -441,7 +450,7 @@ mod default_runner_tests {
         let stdout = runner
             .run_checked_with_opts(
                 ["cat"],
-                &AbsolutePathBuf::current_dir(),
+                AbsolutePathBuf::current_dir(),
                 CommandOpts {
                     stdin: Some("TESTING".as_bytes().to_vec()),
                     ..Default::default()
