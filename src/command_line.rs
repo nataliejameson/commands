@@ -10,7 +10,7 @@ pub enum CommandLineError {
 
 /// Simple wrapper for a vec of strings that lets us push / extend with str literals too.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct CommandLine(pub Vec<String>);
+pub struct CommandLine(Vec<String>);
 
 impl Display for CommandLine {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -27,6 +27,7 @@ impl Display for CommandLine {
     }
 }
 
+/// [`From`] for anything that is an iterator of things that can be `str`s
 impl<T: IntoIterator<Item = impl AsRef<str>>> From<T> for CommandLine {
     fn from(items: T) -> Self {
         Self(items.into_iter().map(|i| i.as_ref().to_owned()).collect())
@@ -48,20 +49,28 @@ impl Deref for CommandLine {
 }
 
 impl CommandLine {
+    /// Add an argument onto this command line.
     pub fn push<T: Into<String>>(&mut self, v: T) {
         self.0.push(v.into())
     }
 
+    /// Add all elements of another command line onto this one.
     pub fn extend<T: Into<CommandLine>>(&mut self, v: T) {
         self.0.extend(v.into().0)
     }
 
+    /// Clones this command line and adds `v` to that clone.
     pub fn clone_with<T: Into<CommandLine>>(&self, v: T) -> Self {
         let mut new = self.clone();
         new.extend(v.into().0);
         new
     }
 
+    /// Get the program that is to be executed.
+    ///
+    /// This is the first element of the list of arguments. If
+    /// there are zero arguments in this command line, this method
+    /// fails.
     pub fn program(&self) -> Result<&str, CommandLineError> {
         match self.0.first() {
             Some(s) => Ok(s),
@@ -69,6 +78,10 @@ impl CommandLine {
         }
     }
 
+    /// Get the args for this command line.
+    ///
+    /// This is all arguments after [`Self::program`]. This will fail
+    /// if there are zero arguments in the command line.
     pub fn args(&self) -> Result<&[String], CommandLineError> {
         if self.0.is_empty() {
             Err(CommandLineError::MissingProgram)
